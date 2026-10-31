@@ -120,7 +120,11 @@ async function api(path, { method = 'GET', body } = {}) {
   }
   if (!res.ok) {
     const code = (data && data.code) || `HTTP_${res.status}`
-    const msg = (data && data.message) || res.statusText
+    // `res.statusText` 在 HTTP/2 下常常是空串（协议没有 reason phrase），
+    // 静态托管又可能回 HTML 让 `res.json()` 失败。两者叠加就会出现
+    // `message === ''`，最终渲染成 "初始化失败：Error"——把人吓一跳还查不出原因。
+    // 所以这里兜底到 code，保证 message 永不为空。
+    const msg = (data && data.message) || res.statusText || code
     if (res.status === 401 && !/\/api\/auth\/login$/.test(path)) {
       showLogin('会话已失效，请重新登录')
     }
@@ -1042,8 +1046,12 @@ $('#login-form').addEventListener('submit', async (e) => {
   } catch (e) {
     if (e && e.status === 401) {
       showLogin()
+    } else if (e && e.status === 404) {
+      // 404 基本只有一个原因：这一份是**静态构建**，同源没有控制面。
+      // 说清楚比抛 "Error" 有用——否则测试人员会以为是工作台坏了。
+      showLogin('未检测到控制面：这是静态构建产物，不含认证服务。请访问 preview-server 启动的实例。')
     } else {
-      showLogin(`初始化失败：${e.message || e}`)
+      showLogin(`初始化失败：${(e && e.message) || e}`)
     }
   }
 })()
