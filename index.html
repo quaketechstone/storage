@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Storage 受控测试预览 · 人机测试工作台</title>
+    <link rel="stylesheet" href="/storage/style.css" />
+  </head>
+  <body>
+<div id="static-notice" style="position:sticky;top:0;z-index:9999;padding:8px 12px;background:#7a2e2e;color:#fff;font:13px/1.5 system-ui,sans-serif;text-align:center">静态构建产物 · 不含控制面（无认证/权限/审计/数据）。此页仅用于核对 UI 与构建字节，登录与所有数据操作都需要 Rust 控制面 <code>preview-server</code>，本页无法完成。</div>
+    <!-- ================= 登录视图（未认证时唯一可见的界面） ================= -->
+    <div id="login" class="login" hidden>
+      <form id="login-form" class="login-card" autocomplete="on">
+        <h1>Storage 受控测试预览</h1>
+        <p class="sub">
+          状态 <code>CONTROLLED_PREVIEW_RELEASED</code> · 需授权账号 · <b>不开放匿名访问</b>
+        </p>
+        <label class="field">
+          <span>用户名</span>
+          <input id="login-user" name="username" autocomplete="username" required />
+        </label>
+        <label class="field">
+          <span>口令</span>
+          <input id="login-pass" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="primary">登录</button>
+        <p id="login-err" class="err" role="alert"></p>
+        <p class="hint">
+          账号由运维在服务器上开通（<code>preview-server user add</code>）；首次登录会强制改密。
+          本预览仅用于 Storage 人机验收，<b>不代表</b>母体融合或生产能力获批。
+        </p>
+      </form>
+    </div>
+
+    <!-- ================= 工作台主视图 ================= -->
+    <div id="app" hidden>
+      <header class="topbar">
+        <div>
+          <h1>Storage 人机测试工作台</h1>
+          <p class="sub" id="app-sub">候选 v0.5 · 受控测试预览 · 真实能力 · 阻断项显式标注</p>
+        </div>
+        <div class="who">
+          <span class="pill" id="who-role">—</span>
+          <span id="who-name">—</span>
+          <button class="ghost" data-act="change-password">改密</button>
+          <button class="ghost" data-act="logout">退出</button>
+        </div>
+        <div class="status" id="status">初始化中…</div>
+      </header>
+
+      <div id="pwd-banner" class="banner" hidden>
+        <b>首次登录必须修改口令</b> —— 除「改密 / 退出」外，其余操作在改密前都会被服务端拒绝。
+      </div>
+
+      <main class="grid">
+        <!-- ⓪ 服务状态 / 我的权限 -->
+        <section class="card" id="sec-status">
+          <h2>⓪ 服务状态 / 我的权限</h2>
+          <p class="hint">
+            权限矩阵由 Rust 权限内核判定；本页按钮可用性由 <code>preview-guard.wasm</code>
+            （同一份 Rust 代码）复核，服务端仍会独立再判一次。
+          </p>
+          <div class="row">
+            <button data-act="refresh-status" data-op="status.read">刷新状态</button>
+            <button data-act="refresh-caps" data-op="status.read">刷新权限</button>
+            <button data-act="show-audit" data-op="audit.read">查看审计</button>
+            <button data-act="verify-audit" data-op="audit.verify">校验审计链</button>
+          </div>
+          <pre class="out" id="status-out">—</pre>
+          <div class="tablewrap">
+            <table class="tbl" id="caps-tbl">
+              <thead><tr><th>操作</th><th>危险</th><th>我可执行</th></tr></thead>
+              <tbody><tr><td colspan="3" class="muted">未加载</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ① 概览 / Provider -->
+        <section class="card" id="sec-provider">
+          <h2>① 概览 / Provider</h2>
+          <p class="hint">打开后端并做健康探测。SQLite 仅 Node/Rust 侧，浏览器内显示为阻断。</p>
+          <div class="row">
+            <button data-act="refresh-providers" data-op="data.read">刷新 Provider</button>
+            <button data-act="open-memory" data-op="data.read">打开 memory</button>
+            <button data-act="open-idb" data-op="data.read">打开 IndexedDB</button>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Provider</th><th>环境</th><th>能力</th><th>健康</th></tr></thead>
+            <tbody id="providers"><tr><td colspan="4" class="muted">未加载</td></tr></tbody>
+          </table>
+          <p class="hint muted">
+            remote / SQLite 在浏览器内为 <b>BLOCKED</b>：需 A-2 网络与融合审批，本预览不开放。
+          </p>
+        </section>
+
+        <!-- ② 数据读写 / 事务 -->
+        <section class="card" id="sec-data">
+          <h2>② 数据读写 / 事务</h2>
+          <p class="hint">
+            经授权门面（ctx.kv 形状）读写，数据只在<b>本浏览器</b>（隔离测试数据）。键不得含 “/”。
+          </p>
+          <div class="row">
+            <input id="data-key" placeholder="key" value="note.1" />
+            <input id="data-val" placeholder="value (JSON)" value='{"text":"hello"}' />
+          </div>
+          <div class="row">
+            <button data-act="put" data-op="data.write">put</button>
+            <button data-act="get" data-op="data.read">get</button>
+            <button data-act="del" data-op="data.delete">del</button>
+            <button data-act="list" data-op="data.read">list</button>
+            <button data-act="tx" data-op="data.write">事务（两条）</button>
+          </div>
+          <pre class="out" id="data-out">—</pre>
+        </section>
+
+        <!-- ③ 授权 / 作用域 -->
+        <section class="card" id="sec-auth">
+          <h2>③ 授权 / 作用域</h2>
+          <p class="hint">挂载 ctx.kv 适配器（<b>隔离挂载</b>，非母体接线）；验证跨 scope 被拒、可用性检测。</p>
+          <div class="row">
+            <button data-act="mount" data-op="auth.mount">挂载 ctx.kv</button>
+            <button data-act="auth-rw" data-op="data.write">写读（经适配器）</button>
+            <button data-act="cross-scope" data-op="data.read">跨 scope 测试</button>
+            <button data-act="availability" data-op="data.read">可用性</button>
+          </div>
+          <pre class="out" id="auth-out">—</pre>
+        </section>
+
+        <!-- ④ 加密 / 签名 -->
+        <section class="card" id="sec-crypto">
+          <h2>④ 加密 / 签名 / 轮换</h2>
+          <p class="hint">创建密钥环 → 信封加密 → 解密；轮换 KEK。<b>隔离演练</b>，生产加密启用需 B-1 审批。</p>
+          <div class="row">
+            <button data-act="keyring" data-op="crypto.read">创建密钥环</button>
+            <button data-act="seal" data-op="crypto.read">加密 / 解密</button>
+            <button data-act="rotate" data-op="crypto.rotate">轮换 KEK</button>
+          </div>
+          <pre class="out" id="crypto-out">—</pre>
+        </section>
+
+        <!-- ⑤ 备份 / 恢复 -->
+        <section class="card" id="sec-backup">
+          <h2>⑤ 备份 / 恢复（浏览器侧数据）</h2>
+          <p class="hint">导出带签名备份 → 验签 → 篡改后应被拒 → 恢复到新库。</p>
+          <div class="row">
+            <button data-act="backup" data-op="backup.export">导出备份</button>
+            <button data-act="verify" data-op="data.read">验签</button>
+            <button data-act="tamper" data-op="data.read">篡改后验签</button>
+            <button data-act="restore" data-op="backup.restore">恢复到新库</button>
+          </div>
+          <pre class="out" id="backup-out">—</pre>
+        </section>
+
+        <!-- ⑥ 故障注入 -->
+        <section class="card" id="sec-fault">
+          <h2>⑥ 故障注入</h2>
+          <p class="hint">对独立引擎注入 put 失败，验证“失败不误写、不越权”。</p>
+          <div class="row">
+            <button data-act="fault-arm" data-op="fault.inject">注入 put 故障</button>
+            <button data-act="fault-trigger" data-op="data.write">触发 put</button>
+            <button data-act="fault-check" data-op="data.read">检查库内无脏写</button>
+          </div>
+          <pre class="out" id="fault-out">—</pre>
+        </section>
+
+        <!-- ⑦ 证据 -->
+        <section class="card" id="sec-evidence">
+          <h2>⑦ 运行日志 / 证据 / 哈希</h2>
+          <p class="hint">采集固定冒烟序列 → 上传到服务端持久化（带 sha256）→ 可下载。</p>
+          <div class="row">
+            <button data-act="evidence" data-op="data.read">采集证据</button>
+            <button data-act="upload-evidence" data-op="evidence.write">上传到服务端</button>
+            <button data-act="download-evidence" data-op="evidence.read">下载证据 JSON</button>
+            <button data-act="refresh-evidence" data-op="evidence.read">刷新服务端证据</button>
+          </div>
+          <pre class="out" id="evidence-out">—</pre>
+          <div class="tablewrap">
+            <table class="tbl" id="evidence-tbl">
+              <thead><tr><th>id</th><th>时间</th><th>提交人</th><th>sha256</th></tr></thead>
+              <tbody><tr><td colspan="4" class="muted">未加载</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ⑧ 运维（危险） -->
+        <section class="card" id="sec-admin">
+          <h2>⑧ 运维 / 服务控制（危险）</h2>
+          <p class="hint">
+            服务端测试数据的备份、恢复、重置、停止，以及账号管理。全部为危险操作，
+            需输入确认短语并填写理由；每次都会写审计。
+          </p>
+          <div class="row">
+            <button data-act="refresh-backups" data-op="backup.export">刷新备份</button>
+            <button data-act="server-backup" data-op="backup.export">创建服务端备份</button>
+            <input id="restore-id" placeholder="备份 id（bk-…）" />
+            <button data-act="server-restore" data-op="backup.restore">恢复</button>
+          </div>
+          <div class="row">
+            <select id="reset-scope">
+              <option value="testing">重置 testing（审计+证据+签署）</option>
+              <option value="evidence">重置 evidence（仅证据）</option>
+              <option value="audit">重置 audit（仅审计）</option>
+            </select>
+            <button data-act="server-reset" data-op="service.reset">重置测试数据</button>
+            <button data-act="server-stop" data-op="service.control">停止服务</button>
+          </div>
+          <pre class="out" id="admin-out">—</pre>
+
+          <h3>账号管理</h3>
+          <div class="row">
+            <input id="new-user" placeholder="用户名" />
+            <select id="new-role">
+              <option value="viewer">viewer 只读</option>
+              <option value="tester">tester 普通测试</option>
+              <option value="operator">operator 危险操作</option>
+            </select>
+            <input id="new-note" placeholder="备注（测试方/工单）" />
+            <button data-act="user-create" data-op="account.admin">新建账号</button>
+            <button data-act="refresh-users" data-op="account.admin">刷新账号</button>
+          </div>
+          <div class="tablewrap">
+            <table class="tbl" id="users-tbl">
+              <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
+              <tbody><tr><td colspan="5" class="muted">未加载</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ⑨ 真人验收入口 -->
+        <section class="card wide" id="sec-mn">
+          <h2>⑨ 真人验收入口（MN-01 / MN-02）</h2>
+          <p class="hint">
+            本区域只做<b>记录</b>：勾选完成后提交，服务端存证并写审计。
+            <b>Agent 不代签</b>；提交后状态为 <code>SUBMITTED_PENDING_REVIEW</code>，
+            不会自动变成 PASS。
+          </p>
+          <div class="row">
+            <button data-act="refresh-mn" data-op="evidence.read">刷新验收记录</button>
+            <button data-act="load-mn01" data-op="evidence.read">载入 MN-01 清单</button>
+            <button data-act="load-mn02" data-op="evidence.read">载入 MN-02 清单</button>
+          </div>
+          <div id="mn-checklist" class="checklist"><p class="muted">选择 MN-01 或 MN-02 载入清单</p></div>
+          <div class="row">
+            <input id="mn-name" placeholder="验收人姓名（必填）" />
+            <select id="mn-decision">
+              <option value="PASS">PASS</option>
+              <option value="FAIL">FAIL</option>
+              <option value="BLOCKED">BLOCKED</option>
+            </select>
+            <button data-act="mn-submit" data-op="signoff.write">提交验收记录</button>
+          </div>
+          <textarea id="mn-note" rows="3" placeholder="意见 / 复现步骤 / 截图路径"></textarea>
+          <pre class="out" id="mn-out">—</pre>
+        </section>
+      </main>
+
+      <footer class="logwrap">
+        <div class="loghead">
+          <span>运行日志</span>
+          <button class="ghost" data-act="clear-log">清空</button>
+        </div>
+        <pre id="log" class="log"></pre>
+      </footer>
+    </div>
+
+    <!-- ================= 危险操作确认对话框 ================= -->
+    <dialog id="confirm-dlg" class="dlg">
+      <form method="dialog">
+        <h3 id="dlg-title">确认危险操作</h3>
+        <p class="hint" id="dlg-desc">—</p>
+        <label class="field">
+          <span>输入确认短语 <code id="dlg-phrase">—</code></span>
+          <input id="dlg-input" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span>操作理由（进审计，至少 4 字）</span>
+          <textarea id="dlg-reason" rows="2"></textarea>
+        </label>
+        <div class="row end">
+          <button value="cancel" class="ghost">取消</button>
+          <button value="ok" id="dlg-ok" class="danger">确认执行</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/storage/app.js"></script>
+  </body>
+</html>
